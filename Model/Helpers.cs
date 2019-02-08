@@ -111,7 +111,9 @@ internal static class RndHelper
         int seed = default(int);
         do {
             seed = SecureInt();
-        } while (seed < min);
+        } while (seed < min);  // Yes its computationally more intensive than just Math.Abs() 
+                               // but I'm not clear on how Abs effects the keyspace mathematically
+                               // so we'll just try again.
         return (seed % (max - min + 1)) + min;
     }
 }

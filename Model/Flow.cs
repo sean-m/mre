@@ -12,6 +12,7 @@ namespace Granfeldt
 
     [
     XmlInclude(typeof(AttributeFlowAttribute)),
+    XmlInclude(typeof(AttributeFlowFindReplace)),
     XmlInclude(typeof(AttributeFlowConcatenate)),
     XmlInclude(typeof(AttributeFlowConstant)),
     XmlInclude(typeof(AttributeFlowMultivaluedConstant)),
@@ -568,6 +569,241 @@ namespace Granfeldt
                     {
                         target = mventry.ObjectID.ToString(this.Format);
                     }
+
+                    if (targetIsDN)
+                    {
+                        csentry.DN = csentry.MA.CreateDN(target);
+                    }
+                    else
+                    {
+                        csentry[this.Target].StringValue = target;
+                    }
+
+                    break;
+
+                case AttributeType.Binary:
+                    csentry[this.Target].BinaryValue = mventry.ObjectID.ToByteArray();
+                    break;
+
+                case AttributeType.Integer:
+                case AttributeType.Undefined:
+                case AttributeType.Boolean:
+                case AttributeType.Reference:
+                default:
+                    throw new InvalidOperationException(string.Format("Cannot flow metaverse object ID to attribute of type {0}", targetType));
+            }
+        }
+    }
+
+    public class AttributeFlowFindReplace : AttributeFlowBase
+    {
+        public string Source;
+        public string Find;
+        public string Replace;
+        public bool LowercaseTargetValue;
+        public bool UppercaseTargetValue;
+        public bool TrimTargetValue;
+        
+        public override void Generate(ConnectedMA ma, CSEntry csentry, MVEntry mventry, Rule rule)
+        {
+            Tracer.TraceInformation("enter-attributeflowattribute");
+
+            bool sourceIsMVObjectID = this.Source.Equals("[mvobjectid]", StringComparison.OrdinalIgnoreCase);
+            bool targetIsDN = this.Target.Equals("[dn]", StringComparison.OrdinalIgnoreCase);
+            AttributeType sourceType;
+            AttributeType targetType;
+
+            if (!sourceIsMVObjectID)
+            {
+                sourceType = mventry[this.Source].DataType;
+            }
+            else
+            {
+                sourceType = AttributeType.String;
+            }
+
+            if (!targetIsDN)
+            {
+                targetType = csentry[this.Target].DataType;
+            }
+            else
+            {
+                targetType = AttributeType.String;
+            }
+
+            if (sourceIsMVObjectID)
+            {
+                Tracer.TraceInformation("flow-source-value: '{0}'", mventry.ObjectID.ToString());
+                this.FlowMVObjectID(csentry, mventry, targetIsDN, targetType);
+                return;
+            }
+            else
+            {
+                Tracer.TraceInformation("flow-source-value: '{0}'", mventry[this.Source].Value);
+            }
+
+            if (!mventry[this.Source].IsPresent)
+            {
+                return;
+            }
+
+            try
+            {
+                switch (sourceType)
+                {
+                    case AttributeType.String:
+                        this.FlowStringAttribute(csentry, mventry, targetIsDN, targetType);
+                        break;
+                    case AttributeType.Undefined:
+                    default:
+                        break;
+                }
+
+                if (targetIsDN)
+                {
+                    Tracer.TraceInformation("target-value: '{0}'", csentry.DN);
+                }
+                else
+                {
+                    Tracer.TraceInformation("target-value: '{0}'", csentry[this.Target].Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                Tracer.TraceError("error {0}", ex.GetBaseException());
+                throw;
+            }
+            finally
+            {
+                Tracer.TraceInformation("exit-attributeflowattribute");
+            }
+        }
+
+
+        private void FlowStringAttribute(CSEntry csentry, MVEntry mventry, bool targetIsDN, AttributeType targetType)
+        {
+            string sourceValue = mventry[this.Source].StringValue;
+
+            switch (targetType)
+            {
+                case AttributeType.String:
+
+                    string target = this.ApplyStringNormalizations(sourceValue);
+                    target = this.ApplyFindReplace(target, Find, Replace);
+
+                    if (targetIsDN)
+                    {
+                        csentry.DN = csentry.MA.CreateDN(target);
+                    }
+                    else
+                    {
+                        csentry[this.Target].StringValue = target;
+                    }
+
+                    break;
+
+                case AttributeType.Integer:
+                    long intvalue;
+
+                    if (Int64.TryParse(sourceValue, out intvalue))
+                    {
+                        csentry[this.Target].IntegerValue = intvalue;
+                    }
+                    else
+                    {
+                        throw new InvalidCastException(string.Format("The source value '{0}' cannot be converted to a integer value", sourceValue));
+                    }
+                    break;
+
+                case AttributeType.Binary:
+                    if (sourceValue != null)
+                    {
+                        csentry[this.Target].BinaryValue = System.Text.UTF8Encoding.UTF8.GetBytes(sourceValue);
+                    }
+
+                    break;
+
+                case AttributeType.Boolean:
+                    if (sourceValue != null)
+                    {
+                        bool value;
+
+                        if (Boolean.TryParse(sourceValue, out value))
+                        {
+                            csentry[this.Target].BooleanValue = value;
+                        }
+                        else
+                        {
+                            if (sourceValue == "0")
+                            {
+                                csentry[this.Target].BooleanValue = false;
+                            }
+                            else if (sourceValue == "1")
+                            {
+                                csentry[this.Target].BooleanValue = false;
+                            }
+                            else
+                            {
+                                throw new InvalidCastException(string.Format("The source value '{0}' cannot be converted to a boolean value", sourceValue));
+                            }
+                        }
+                    }
+                    else
+                    {
+                        csentry[this.Target].BinaryValue = null;
+                    }
+                    break;
+
+                case AttributeType.Reference:
+                case AttributeType.Undefined:
+                default:
+
+                    throw new InvalidOperationException(string.Format("Cannot convert string source value to target type {0}", targetType));
+            }
+
+        }
+
+        private string ApplyFindReplace(string input, string find, string replace)
+        {
+            if (String.IsNullOrEmpty(input) || 
+                String.IsNullOrEmpty(find) || 
+                String.IsNullOrEmpty(Replace)) return input;
+
+            return input.Replace(find, replace);
+        }
+
+        private string ApplyStringNormalizations(string sourceValue)
+        {
+            string target = sourceValue;
+
+            if (this.LowercaseTargetValue)
+            {
+                target = target.ToLower();
+            }
+
+            if (this.UppercaseTargetValue)
+            {
+                target = target.ToUpper();
+            }
+
+            if (this.TrimTargetValue)
+            {
+                target = target.Trim();
+            }
+
+            return target;
+        }
+
+        private void FlowMVObjectID(CSEntry csentry, MVEntry mventry, bool targetIsDN, AttributeType targetType)
+        {
+            Tracer.TraceInformation("flow-source: mvobjectid, '{0}'", mventry.ObjectID);
+
+            switch (targetType)
+            {
+                case AttributeType.String:
+                    string target;
+
+                    target = mventry.ObjectID.ToString();
 
                     if (targetIsDN)
                     {

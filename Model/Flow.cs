@@ -598,8 +598,9 @@ namespace Granfeldt
     public class AttributeFlowFindReplace : AttributeFlowBase
     {
         public string Source;
-        public string Find;
-        public string Replace;
+        public string Pattern;
+        public string Replacement;
+        public bool IgnoreCase = true;
         public bool LowercaseTargetValue;
         public bool UppercaseTargetValue;
         public bool TrimTargetValue;
@@ -689,7 +690,7 @@ namespace Granfeldt
                 case AttributeType.String:
 
                     string target = this.ApplyStringNormalizations(sourceValue);
-                    target = this.ApplyFindReplace(target, Find, Replace);
+                    target = this.ApplyFindReplace(target, Pattern, Replacement, IgnoreCase);
 
                     if (targetIsDN)
                     {
@@ -763,13 +764,15 @@ namespace Granfeldt
 
         }
 
-        private string ApplyFindReplace(string input, string find, string replace)
+        private string ApplyFindReplace(string input, string find, string replace, bool ignoreCase)
         {
             if (String.IsNullOrEmpty(input) || 
                 String.IsNullOrEmpty(find) || 
-                String.IsNullOrEmpty(Replace)) return input;
+                String.IsNullOrEmpty(Replacement)) return input;
 
-            return input.Replace(find, replace);
+            var options = ignoreCase ? RegexOptions.IgnoreCase : RegexOptions.None;
+
+            return Regex.Replace(input, find, replace, options);
         }
 
         private string ApplyStringNormalizations(string sourceValue)

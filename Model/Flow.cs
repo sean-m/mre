@@ -768,7 +768,7 @@ namespace Granfeldt
         {
             if (String.IsNullOrEmpty(input) || 
                 String.IsNullOrEmpty(find) || 
-                String.IsNullOrEmpty(Replacement)) return input;
+                String.IsNullOrEmpty(replace)) return input;
 
             var options = ignoreCase ? RegexOptions.IgnoreCase : RegexOptions.None;
 
